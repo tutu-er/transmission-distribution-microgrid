@@ -28,19 +28,19 @@ tdm/
 
 ### 安装
 
+推荐使用 Conda 环境 `tdm`（项目已配置为默认解释器）：
+
 ```bash
 # 克隆仓库
 git clone https://github.com/tutu-er/transmission-distribution-microgrid.git
 cd transmission-distribution-microgrid
 
-# 创建虚拟环境
-python -m venv .venv
-.venv\Scripts\activate   # Windows
-# source .venv/bin/activate  # Linux/macOS
-
-# 安装（开发模式）
-pip install -e ".[dev]"
+# 创建并激活 conda 环境
+conda env create -f environment.yml
+conda activate tdm
 ```
+
+在 Cursor / VS Code 中打开本项目后，将自动选用 `tdm` 环境；新开终端也会自动激活。
 
 ### 运行
 
