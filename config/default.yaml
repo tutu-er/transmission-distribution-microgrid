@@ -1,0 +1,15 @@
+# TDM 默认配置
+project:
+  name: tdm
+  description: "Transmission-Distribution-Microgrid Coordination"
+
+simulation:
+  time_step_s: 1.0
+  max_steps: 3600
+
+coordinator:
+  name: tdm-coordinator
+  algorithm: placeholder
+
+network:
+  voltage_levels_kv: [500, 220, 110, 35, 10, 0.4]
