@@ -1,6 +1,21 @@
 {
+  "python.defaultInterpreterPath": "D:/apps/miniconda3/envs/tdm/python.exe",
+  "python.condaPath": "D:/apps/miniconda3/Scripts/conda.exe",
   "python.terminal.activateEnvironment": true,
+  "python.terminal.activateEnvInCurrentTerminal": true,
   "python.testing.pytestEnabled": true,
   "python.testing.pytestArgs": ["tests"],
-  "python.analysis.extraPaths": ["src"]
+  "python.analysis.extraPaths": ["src"],
+  "terminal.integrated.profiles.windows": {
+    "tdm (conda)": {
+      "source": "PowerShell",
+      "icon": "terminal-powershell",
+      "args": [
+        "-NoExit",
+        "-Command",
+        "conda activate tdm"
+      ]
+    }
+  },
+  "terminal.integrated.defaultProfile.windows": "tdm (conda)"
 }
