@@ -1,57 +1,123 @@
-"""DER 运行成本模型 (§2.2.2, 式 2.6–2.8). 价格单位: $/MWh.
+"""DER 精确运行成本 h(x) (§2.6–2.8).
 
-TODO (Phase 2 — 独立于 MIA):
-  [ ] PiecewiseLinearCost dataclass: slopes (固定 F*), intercepts (f 或 g)
-  [ ] zero_cost(tau): PV/WT/EV(无V2G) 返回全零截距
-  [ ] build_power_cost_rhs(params):
-        - 线性: unit_cost ($/MWh) → 五档 F* 下的 f_t
-        - ESS: aging_lambda * |P| → 分段线性 (2.7)
-        - 输入示例: {"cost_type": "linear", "unit_cost": 75.0}
-  [ ] build_state_cost_rhs(params):
-        - HVAC: comfort_lambda, T_comf (2.8) → g_t
-  [ ] evaluate_cost(power, state, params): 验证用，单位 MW/MWh → $
-  [ ] 测试: 表 2.5.3 (DG 发电成本、HVAC 舒适度成本)
+与 ``der/*.py`` 端口功率可行域共同构成**精确 DER 问题**：
 
-注意:
-  - F*, G* 由 fixed_price_slopes() 固定，不在 MIA 中求解
-  - 此处产出单体 DER 的 f_k, g_k；VPP 级截距在分层聚合后由 Σb 或 (2.23) 得到
-  - 依赖: der.units.PRICE_SEGMENTS_MWH
+- 可行性：``build_dg_polytope(params).contains(P)`` 等（H 表示，仅功率/状态变量）
+- 运行成本：``evaluate_cost(P, S, params)``（本模块，非多面体）
+
+参与模板 H 由 ``participation_rhs`` 的 ``A_cost,b_cost`` 与 ``cost_epigraph.stack_participation_h`` 拼接 ``A_p,b_p`` 得到。
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Callable, Literal
+
 import numpy as np
 
-from tdm.models.der.base import Parameters
-from tdm.models.der.units import PRICE_SEGMENTS_MWH
+from tdm.models.der.base import Parameters, get_tau
 
-CostSegments = dict[str, np.ndarray]
+CostKind = Literal["power", "state"]
+PhysicalCostKind = Literal["zero", "linear_power", "abs_power", "quadratic_power", "comfort_state"]
 
-
-def fixed_price_slopes() -> np.ndarray:
-    """返回固定的五档边际价格 F* = G* ($/MWh)."""
-    return np.array(PRICE_SEGMENTS_MWH, dtype=float)
-
-
-def zero_cost(tau: int) -> CostSegments:
-    """零成本 DER (PV, WT 等)."""
-    # TODO: 返回 n_seg=5 的零截距，形状 (tau, n_seg) 或等价结构
-    ...
+_DOMAIN_KEYS: dict[CostKind, tuple[str, str]] = {
+    "power": ("P_min", "P_max"),
+    "state": ("T_min", "T_max"),
+}
 
 
-def build_power_cost(parameters: Parameters) -> CostSegments:
-    """分段线性功率成本，由 parameters 直接计算 f_t (2.28a)，不经 MIA."""
-    # TODO: 读取 unit_cost / aging_lambda 等，结合 fixed_price_slopes() 算截距
-    ...
+@dataclass(frozen=True)
+class PhysicalCostModel:
+    """单时段物理成本 h_t(x)；x 为功率 P 或状态 T/S."""
+
+    kind: PhysicalCostKind
+    cost_kind: CostKind
+    tau: int
+    parameters: Parameters
+
+    def domain_at(self, t: int) -> tuple[float, float]:
+        lo_key, hi_key = _DOMAIN_KEYS[self.cost_kind]
+        lo = _param_at_t(self.parameters, lo_key, t, default=0.0)
+        hi = _param_at_t(self.parameters, hi_key, t, default=0.0)
+        return (hi, lo) if lo > hi else (lo, hi)
+
+    def evaluate_period(self, t: int, x: float) -> float:
+        return self.convex_fn_at(t)(x)
+
+    def evaluate(self, x: np.ndarray) -> float:
+        arr = np.asarray(x, dtype=float).reshape(-1)
+        if arr.shape[0] != self.tau:
+            raise ValueError(f"期望长度 {self.tau}，得到 {arr.shape[0]}")
+        return float(sum(self.evaluate_period(t, arr[t]) for t in range(self.tau)))
+
+    def convex_fn_at(self, t: int) -> Callable[[float], float]:
+        p = self.parameters
+        match self.kind:
+            case "zero":
+                return lambda _x: 0.0
+            case "linear_power":
+                return lambda x: float(p["unit_cost"]) * x
+            case "abs_power":
+                return lambda x: float(p["aging_lambda"]) * abs(x)
+            case "quadratic_power":
+                q = _quadratic_coeff(p, t)
+                c = _param_at_t(p, "unit_cost", t, default=0.0)
+                return lambda x: q * x * x + c * x
+            case "comfort_state":
+                lam = float(p["comfort_lambda"])
+                tc = float(_comfort_temperature(p, self.tau)[t])
+                return lambda x: lam * abs(x - tc)
+            case _:
+                raise ValueError(f"未知物理成本类型: {self.kind}")
 
 
-def build_state_cost(parameters: Parameters) -> CostSegments:
-    """分段线性状态成本，由 parameters 直接计算 g_t (2.28b)，不经 MIA."""
-    # TODO: HVAC comfort_lambda, T_comf_t 等
-    ...
+def build_physical_cost(parameters: Parameters, *, kind: CostKind = "power") -> PhysicalCostModel:
+    """由 parameters 推断成本类型并构造 PhysicalCostModel."""
+    if kind == "power":
+        if "quadratic_coeff" in parameters:
+            pkind: PhysicalCostKind = "quadratic_power"
+        elif "unit_cost" in parameters:
+            pkind = "linear_power"
+        elif "aging_lambda" in parameters:
+            pkind = "abs_power"
+        else:
+            pkind = "zero"
+    elif "comfort_lambda" in parameters:
+        pkind = "comfort_state"
+    else:
+        pkind = "zero"
+    return PhysicalCostModel(pkind, kind, get_tau(parameters), parameters)
 
 
 def evaluate_cost(power: np.ndarray, state: np.ndarray | None, parameters: Parameters) -> float:
-    """给定功率(MW)/状态(MWh)向量计算总运行成本 ($)."""
-    # TODO: 可选验证函数
-    ...
+    """精确总运行成本 = 功率成本 +（可选）状态成本."""
+    total = build_physical_cost(parameters, kind="power").evaluate(power)
+    if state is not None:
+        total += build_physical_cost(parameters, kind="state").evaluate(state)
+    return total
+
+
+def _quadratic_coeff(parameters: Parameters, t: int) -> float:
+    q = _param_at_t(parameters, "quadratic_coeff", t)
+    if q <= 0.0:
+        raise ValueError(f"quadratic_coeff 须为正（凸成本），得到 {q}")
+    return q
+
+
+def _param_at_t(parameters: Parameters, key: str, t: int, *, default: float = 0.0) -> float:
+    if key not in parameters:
+        return default
+    arr = np.asarray(parameters[key], dtype=float).reshape(-1)
+    return float(arr[0] if arr.size == 1 else arr[t])
+
+
+def _comfort_temperature(parameters: Parameters, tau: int) -> np.ndarray:
+    if "T_comf" in parameters:
+        t = np.asarray(parameters["T_comf"], dtype=float).reshape(-1)
+        return np.full(tau, float(t[0])) if t.size == 1 else t[:tau]
+    if "T_comf_a" in parameters and "T_comf_b" in parameters:
+        omega = np.asarray(parameters["omega"], dtype=float).reshape(-1)[:tau]
+        return float(parameters["T_comf_a"]) * omega + float(parameters["T_comf_b"])
+    if "T_0" in parameters:
+        return np.full(tau, float(parameters["T_0"]))
+    raise KeyError("舒适度成本需要 T_comf、T_comf_a/T_comf_b 或 T_0")

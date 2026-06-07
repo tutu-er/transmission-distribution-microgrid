@@ -1,39 +1,33 @@
-"""批量标准投影目标构造 (§3.2, 式 3.6–3.7).
+"""批量标准投影目标 (§3.2, 式 3.6–3.7) — 不含 MIA 求解.
 
-职责: 把一批同类型 DER 的原始约束写成 MIA 的 LP 目标（投影/闵可夫斯基和等价形式）。
-MIA: 否 — 只构造问题，求解见 mia.solve_mia。
-
-与 models/projection.py 的区别:
-  - 本模块: Ch3 初级聚合，输出 ProjectionProblem 供 solve_mia 使用
-  - models/projection: Ch2 几何投影 (FME/消元)，精确或低维验证
-
-公开 API (Phase 4):
-  - build_batch_projection_problem
-  - embed_period_heterogeneity
-  - stack_der_constraints
+每台 DER 输出一条 ``ProjectionTarget(der_type, parameters, …)``，供 ``solve_mia`` 数组合并。
 """
 
 from __future__ import annotations
 
+import numpy as np
+
+from tdm.aggregation.mia import DerType, ProjectionTarget
 from tdm.models.der.base import Parameters
 
 
-def build_batch_projection_problem(
-    der_type: str,
+def build_projection_targets(
+    der_type: DerType,
     parameters_list: list[Parameters],
     *,
-    tau: int,
-) -> object:
-    """构造一批 DER 的标准投影问题 (3.6)."""
-    # TODO: Phase 4.1
-    ...
+    with_cost: bool = False,
+) -> list[ProjectionTarget]:
+    """一批同类型 DER → ``ProjectionTarget`` 数组（每台一条）.
+
+    TODO: Phase 4.1
+      - 每台 DER 封装 ``ProjectionTarget(der_type, parameters)``
+      - ESS 保留完整 parameters（``build_ess_polytope`` 用 [P_in; P_out]）
+      - EV：``embed_period_matrix`` 嵌入时段后再构造 parameters (3.7b)
+    """
+    raise NotImplementedError
 
 
-def embed_period_heterogeneity(
-    tau_start: int,
-    tau_end: int,
-    tau_total: int,
-) -> object:
+def embed_period_matrix(tau_start: int, tau_end: int, tau_total: int) -> np.ndarray:
     """EV 等时段异质性嵌入矩阵 M_k (3.7b)."""
     # TODO: Phase 4.4
-    ...
+    raise NotImplementedError

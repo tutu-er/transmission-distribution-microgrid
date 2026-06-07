@@ -32,6 +32,14 @@ def build_xi(tau: int) -> np.ndarray:
     return np.eye(tau)[: tau - 1] - np.eye(tau, k=1)[: tau - 1]
 
 
+def build_B(tau: int) -> np.ndarray:
+    """标准参与模板状态映射 B (式 3.33d)：S = B @ P，S_t = S_{t-1} + P_t，S_0 = 0."""
+    if tau < 1:
+        raise ValueError("tau 必须 >= 1")
+    i, j = np.indices((tau, tau))
+    return np.where(i >= j, 1.0, 0.0)
+
+
 def build_phi(tau: int, eta: float) -> tuple[np.ndarray, np.ndarray]:
     """状态递推矩阵 Φ 及其首列 Φ_1 (附录 A.3)."""
     i, j = np.indices((tau, tau))

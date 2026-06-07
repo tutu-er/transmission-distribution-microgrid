@@ -54,3 +54,25 @@ def table_2_4_hvac_params(tau: int = 3) -> Parameters:
         "T_0": 26.0,
         "omega": np.array([32.4, 34.4, 34.9])[:tau],
     }
+
+
+def table_2_5_3_dg_params(tau: int = 3) -> Parameters:
+    """表 2.5.3 DG：发电成本 0.075 $/kWh → 75 $/MWh."""
+    params = table_2_4_dg_params(tau)
+    params["unit_cost"] = 75.0
+    return params
+
+
+def table_2_5_3_ess_params(tau: int = 2) -> Parameters:
+    """表 2.5.3 ESS：老化成本 0.047 $/kWh → 47 $/MWh."""
+    params = table_2_2_ess_params(tau)
+    params["aging_lambda"] = 47.0
+    return params
+
+
+def table_2_5_3_hvac_params(tau: int = 3) -> Parameters:
+    """表 2.5.3 HVAC：舒适度成本 0.01 $/°C."""
+    params = table_2_4_hvac_params(tau)
+    params["comfort_lambda"] = 0.01
+    params["T_comf"] = np.full(tau, 26.0)
+    return params

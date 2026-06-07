@@ -19,7 +19,7 @@ def build_dg_polytope(parameters: Parameters) -> Polytope:
     xi, _, _ = base_polytope(parameters)
 
     a = np.concatenate([np.eye(tau), -np.eye(tau), xi, -xi], axis=0)
-    b = np.concatenate([p_max, -p_min, r_up, -r_down], axis=0)
+    b = np.concatenate([p_max, -p_min, r_up, r_down], axis=0)
     return Polytope.from_ab(a, b)
 
 
